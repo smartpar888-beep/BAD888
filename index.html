@@ -8,7 +8,6 @@
     <!-- Dependencies -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -16,12 +15,12 @@
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
         // --- แก้ไขค่า Firebase Config ตรงนี้ ---
         const firebaseConfig = {
-            apiKey: "AIzaSyBRHvY1JwC9WtXjsiqHjaGIE08IW9UZ28k",
+            apiKey: "AIzaSyBRHvY1JwC9WtXjsiqHjaGIE08IW9UZ28k", // วางค่า API Key ของคุณที่นี่
             authDomain: "badminton-f29a7.firebaseapp.com",
             projectId: "badminton-f29a7",
             storageBucket: "badminton-f29a7.firebasestorage.app",
@@ -31,10 +30,13 @@
         // ----------------------------------
 
         const appID = "badm-tracker-001"; 
-
         window.FB_READY = false;
-        
-        if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "AIzaSy...") {
+        window.FB_ERROR = null;
+
+        // ตรวจสอบเบื้องต้นว่ามีการใส่ค่าหรือยัง
+        const isConfigPopulated = firebaseConfig.projectId && firebaseConfig.projectId !== "your-app";
+
+        if (isConfigPopulated) {
             try {
                 const app = initializeApp(firebaseConfig);
                 const auth = getAuth(app);
@@ -42,17 +44,19 @@
                 
                 window.fb = { 
                     db, auth, appID,
-                    tools: { collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, setDoc, getDoc, signInAnonymously, onAuthStateChanged }
+                    tools: { onSnapshot, doc, setDoc, signInAnonymously, onAuthStateChanged }
                 };
                 window.FB_READY = true;
             } catch (e) {
-                console.error("Firebase fail:", e);
+                window.FB_ERROR = e.message;
+                console.error("Firebase init error:", e);
             }
         }
     </script>
 
     <style>
-        body { font-family: 'Inter', 'Kanit', sans-serif; }
+        body { font-family: 'Inter', 'Kanit', sans-serif; margin: 0; padding: 0; overflow-x: hidden; }
+        #root { min-height: 100vh; display: flex; flex-direction: column; }
     </style>
 </head>
 <body class="bg-[#F8FAFC]">
@@ -76,7 +80,7 @@
             };
             return (
                 <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-                    {icons[name]}
+                    {icons[name] || null}
                 </svg>
             );
         };
@@ -87,6 +91,7 @@
             const [activeTab, setActiveTab] = useState('dashboard');
             const [newPlayerName, setNewPlayerName] = useState('');
             const [isLoading, setIsLoading] = useState(true);
+            const [errorMessage, setErrorMessage] = useState(window.FB_ERROR);
 
             useEffect(() => {
                 if (!window.FB_READY) {
@@ -98,7 +103,11 @@
                     if (u) {
                         setUser(u);
                     } else {
-                        try { await tools.signInAnonymously(auth); } catch (err) { console.error(err); }
+                        try { 
+                            await tools.signInAnonymously(auth); 
+                        } catch (err) { 
+                            setErrorMessage("Auth Error: " + err.message);
+                        }
                     }
                     setIsLoading(false);
                 });
@@ -113,7 +122,9 @@
                     if (docSnap.exists()) {
                         setPlayers(docSnap.data().list || []);
                     }
-                }, (err) => console.error(err));
+                }, (err) => {
+                    setErrorMessage("Database Error: " + err.message);
+                });
                 return () => unsub();
             }, [user]);
 
@@ -147,32 +158,48 @@
             };
 
             if (isLoading) {
-                return <div className="h-screen flex items-center justify-center bg-slate-900 text-white font-bold animate-pulse text-sm">LOADING...</div>;
+                return (
+                    <div className="flex-1 flex items-center justify-center bg-slate-900 text-white font-bold">
+                        <div className="text-center">
+                            <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                            <p className="animate-pulse text-xs tracking-[0.3em]">CONNECTING TO FIREBASE...</p>
+                        </div>
+                    </div>
+                );
             }
 
             return (
                 <div className="max-w-md mx-auto min-h-screen flex flex-col pb-24 bg-white shadow-2xl relative">
-                    <header className="p-6 bg-white border-b sticky top-0 z-20 flex justify-between items-center">
+                    {errorMessage && (
+                        <div className="bg-red-500 text-white p-3 text-[10px] font-bold text-center sticky top-0 z-50">
+                            🚨 {errorMessage}
+                        </div>
+                    )}
+                    
+                    <header className="p-6 bg-white border-b flex justify-between items-center">
                         <div>
                             <h1 className="text-2xl font-black text-slate-900 italic uppercase">Badm Hub</h1>
-                            <p className="text-[10px] font-bold text-slate-400 tracking-widest">
-                                {window.FB_READY ? "🟢 ONLINE" : "🟡 OFFLINE MODE"}
+                            <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">
+                                {window.FB_READY ? "🟢 Online" : "🟡 Offline Mode"}
                             </p>
                         </div>
-                        <button onClick={() => setActiveTab('settings')} className="p-2.5 bg-slate-100 rounded-2xl">
+                        <button onClick={() => setActiveTab('settings')} className="p-2.5 bg-slate-100 rounded-2xl text-slate-600">
                             <Icon name="settings" size={20} />
                         </button>
                     </header>
 
-                    <main className="flex-1 p-6">
+                    <main className="flex-1 p-6 overflow-y-auto">
                         {activeTab === 'dashboard' && (
                             <div className="space-y-6">
-                                <div className="bg-indigo-600 p-8 rounded-[2.5rem] text-white shadow-xl">
+                                <div className="bg-gradient-to-br from-indigo-600 to-violet-700 p-8 rounded-[2.5rem] text-white shadow-xl">
                                     <p className="text-xs font-bold opacity-70 uppercase tracking-widest">สมาชิกทั้งหมด</p>
-                                    <h2 className="text-6xl font-black mt-2">{players.length} <span className="text-xl opacity-60">คน</span></h2>
+                                    <h2 className="text-6xl font-black mt-2 tracking-tighter">{players.length} <span className="text-xl font-normal opacity-60 italic">คน</span></h2>
                                 </div>
                                 <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100">
-                                    <h3 className="font-bold text-slate-800 mb-5 text-sm uppercase tracking-tight">รายชื่อสมาชิก</h3>
+                                    <h3 className="font-bold text-slate-800 mb-5 text-sm uppercase tracking-tight flex items-center gap-2">
+                                        <div className="w-1 h-4 bg-indigo-500 rounded-full"></div>
+                                        รายชื่อนักกีฬา
+                                    </h3>
                                     <div className="grid grid-cols-2 gap-3">
                                         {players.map((p, i) => (
                                             <div key={i} className="p-4 bg-white border border-slate-100 rounded-2xl text-sm font-bold text-slate-700 shadow-sm">{p}</div>
@@ -184,24 +211,24 @@
 
                         {activeTab === 'settings' && (
                             <div className="space-y-6">
-                                <div className="bg-white p-6 rounded-[2rem] border border-slate-100">
-                                    <h3 className="font-black text-slate-800 mb-4 text-xs">เพิ่มสมาชิกใหม่</h3>
+                                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                                    <h3 className="font-black text-slate-800 mb-4 text-xs uppercase tracking-widest">เพิ่มสมาชิกใหม่</h3>
                                     <div className="flex gap-2">
                                         <input 
                                             type="text" 
                                             value={newPlayerName}
                                             onChange={(e) => setNewPlayerName(e.target.value)}
                                             onKeyPress={(e) => e.key === 'Enter' && handleAddPlayer()}
-                                            placeholder="ใส่ชื่อเล่น..."
-                                            className="flex-1 bg-slate-50 p-4 rounded-2xl outline-none font-bold"
+                                            placeholder="ระบุชื่อเล่น..."
+                                            className="flex-1 bg-slate-50 p-4 rounded-2xl outline-none font-bold text-slate-700"
                                         />
-                                        <button onClick={handleAddPlayer} className="bg-indigo-600 text-white px-6 rounded-2xl font-black shadow-lg shadow-indigo-200">
+                                        <button onClick={handleAddPlayer} className="bg-indigo-600 text-white px-6 rounded-2xl font-black">
                                             <Icon name="plus" />
                                         </button>
                                     </div>
                                 </div>
-                                <div className="space-y-3">
-                                    <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-widest px-2">จัดการสมาชิก</h3>
+                                <div className="space-y-2">
+                                    <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-widest px-2">จัดการรายชื่อ</h3>
                                     {players.map((p, i) => (
                                         <div key={i} className="bg-white p-4 pl-6 rounded-2xl flex justify-between items-center border border-slate-100">
                                             <span className="font-bold text-slate-700">{p}</span>
@@ -216,11 +243,11 @@
                     <nav className="fixed bottom-8 left-8 right-8 bg-slate-900 p-3 rounded-[2.5rem] flex justify-between shadow-2xl z-30">
                         <button onClick={() => setActiveTab('dashboard')} className={`flex-1 py-4 rounded-[1.8rem] flex flex-col items-center gap-1 ${activeTab === 'dashboard' ? 'bg-white text-slate-900' : 'text-slate-500'}`}>
                             <Icon name="dashboard" size={18} />
-                            <span className="text-[10px] font-black">HOME</span>
+                            <span className="text-[10px] font-black tracking-tighter">HOME</span>
                         </button>
                         <button onClick={() => setActiveTab('settings')} className={`flex-1 py-4 rounded-[1.8rem] flex flex-col items-center gap-1 ${activeTab === 'settings' ? 'bg-white text-slate-900' : 'text-slate-500'}`}>
                             <Icon name="user" size={18} />
-                            <span className="text-[10px] font-black">PLAYERS</span>
+                            <span className="text-[10px] font-black tracking-tighter">PLAYERS</span>
                         </button>
                     </nav>
                 </div>
