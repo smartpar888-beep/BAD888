@@ -5,21 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Badminton Hub - Dashboard</title>
     
-    <!-- Scripts: Load Order is critical -->
+    <!-- Dependencies -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Recharts depends on prop-types -->
     <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Kanit:wght@300;500;700&display=swap" rel="stylesheet">
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
+        // ใส่ Config ของคุณที่นี่
         const firebaseConfig = {
             apiKey: "AIzaSyBRHvY1JwC9WtXjsiqHjaGIE08IW9UZ28k",
             authDomain: "badminton-f29a7.firebaseapp.com",
@@ -29,27 +32,31 @@
             appId: "1:880213955717:web:ca8ab9ae8a495fae0145ec"
         };
 
+        const appID = "badm-tracker-001"; 
+
+        window.FB_READY = false;
+        
         if (firebaseConfig.apiKey) {
             try {
                 const app = initializeApp(firebaseConfig);
                 const auth = getAuth(app);
                 const db = getFirestore(app);
                 
-                window.firebaseDB = db;
-                window.firebaseAuth = auth;
-                window.firestoreUtils = { collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, setDoc };
-                window.authUtils = { signInAnonymously, onAuthStateChanged };
-                window.firebaseInitialized = true;
+                window.fb = { 
+                    db, auth, appID,
+                    tools: { collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, setDoc, getDoc, signInAnonymously, onAuthStateChanged }
+                };
+                window.FB_READY = true;
             } catch (e) {
-                console.error("Firebase initialization failed:", e);
+                console.error("Firebase fail:", e);
             }
         }
     </script>
 
     <style>
         body { font-family: 'Inter', 'Kanit', sans-serif; }
-        .recharts-cartesian-axis-tick-value { font-family: 'Kanit', sans-serif; font-weight: 500; }
-        ::-webkit-scrollbar { width: 0px; background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; }
     </style>
 </head>
 <body class="bg-[#F8FAFC]">
@@ -57,19 +64,22 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
+        const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Cell, LabelList } = Recharts;
 
+        // UI Components
         const Icon = ({ name, size = 20, className = "" }) => {
             const icons = {
                 dashboard: <path d="M3 3h7v9H3V3zm11 0h7v5h-7V3zm0 9h7v9h-7v-9zM3 16h7v5H3v-5z"/>,
                 plus: <path d="M12 5v14M5 12h14"/>,
-                history: <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8m0-4v4h4"/>,
-                settings: <path d="M12.22 2h-.44a2 2 0 0 0-2 2a2 2 0 0 1-2 2a2 2 0 0 0-2 2a2 2 0 0 1-2 2a2 2 0 0 0-2 2v.44a2 2 0 0 0 2 2a2 2 0 0 1 2 2a2 2 0 0 0 2 2a2 2 0 0 1 2 2a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2a2 2 0 0 1 2-2a2 2 0 0 0 2-2a2 2 0 0 1 2-2a2 2 0 0 0 2-2v-.44a2 2 0 0 0-2-2a2 2 0 0 1-2-2a2 2 0 0 0-2-2a2 2 0 0 1-2-2a2 2 0 0 0-2-2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>,
-                court: <><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/><line x1="12" x2="12" y1="5" y2="19"/></>,
                 user: <><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
                 trash: <path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>,
-                lock: <><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>,
-                shuttle: <><path d="M12 2L8 6v10l4 4 4-4V6l-4-4z"/><path d="M8 10h8"/></>,
-                wallet: <path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4m-4 10H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h14v4a2 2 0 0 1-2 2z"/>
+                shuttle: <path d="M12 2L8 6v10l4 4 4-4V6l-4-4z"/>,
+                settings: (
+                    <>
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </>
+                )
             };
             return (
                 <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -78,403 +88,180 @@
             );
         };
 
-        const MASTER_PIN = "1234";
-        const APP_ID_PATH = "badminton_v1";
-
         const App = () => {
-            const [isFirebaseReady, setIsFirebaseReady] = useState(false);
             const [user, setUser] = useState(null);
             const [players, setPlayers] = useState([]);
             const [activeTab, setActiveTab] = useState('dashboard');
-            
-            // State สำหรับฟอร์มบันทึกการตี
-            const [selectedPlayers, setSelectedPlayers] = useState([]);
-            const [shuttleUsed, setShuttleUsed] = useState('');
-            const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-
-            // State สำหรับฟอร์มการเงิน (ลูกแบด/ค่าคอร์ด)
-            const [financeType, setFinanceType] = useState('shuttle'); // 'shuttle' or 'court'
-            const [financeAmount, setFinanceAmount] = useState('');
-            const [financeQty, setFinanceQty] = useState('');
-            const [financePayer, setFinancePayer] = useState('');
-            const [financeMonth, setFinanceMonth] = useState(new Date().toISOString().substring(0, 7));
-
-            // State อื่นๆ
             const [newPlayerName, setNewPlayerName] = useState('');
-            const [showPinModal, setShowPinModal] = useState(false);
-            const [pin, setPin] = useState("");
-            const [pendingAction, setPendingAction] = useState(null);
-            const [pinError, setPinError] = useState(false);
+            const [isLoading, setIsLoading] = useState(true);
 
-            const [usageLogs, setUsageLogs] = useState([]);
-            const [stockLogs, setStockLogs] = useState([]);
-            const [courtLogs, setCourtLogs] = useState([]);
-
+            // 1. Setup Auth
             useEffect(() => {
-                const checkReady = setInterval(() => {
-                    if (window.firebaseInitialized && window.firebaseAuth && typeof window.Recharts !== 'undefined' && typeof window.PropTypes !== 'undefined') {
-                        setIsFirebaseReady(true);
-                        clearInterval(checkReady);
+                if (!window.FB_READY) {
+                    setIsLoading(false);
+                    return;
+                }
+                const { auth, tools } = window.fb;
+                
+                const unsubAuth = tools.onAuthStateChanged(auth, async (u) => {
+                    if (u) {
+                        setUser(u);
+                    } else {
+                        try {
+                            await tools.signInAnonymously(auth);
+                        } catch (err) {
+                            console.error("Login Error", err);
+                        }
                     }
-                }, 500);
-                return () => clearInterval(checkReady);
+                    setIsLoading(false);
+                });
+                return () => unsubAuth();
             }, []);
 
-            const db = window.firebaseDB;
-            const auth = window.firebaseAuth;
-            const utils = window.firestoreUtils;
-
+            // 2. Load Members List
             useEffect(() => {
-                if (!isFirebaseReady || !auth) return;
-                window.authUtils.onAuthStateChanged(auth, (u) => {
-                    if (u) setUser(u);
-                    else window.authUtils.signInAnonymously(auth);
-                });
-            }, [isFirebaseReady]);
-
-            useEffect(() => {
-                if (!user || !db || !utils) return;
+                if (!user || !window.FB_READY) return;
+                const { db, tools, appID } = window.fb;
                 
-                const unsubUsage = utils.onSnapshot(utils.collection(db, APP_ID_PATH, 'data', 'usage'), (s) => setUsageLogs(s.docs.map(d => ({id:d.id, ...d.data()})).sort((a,b)=>b.timestamp-a.timestamp)));
-                const unsubStock = utils.onSnapshot(utils.collection(db, APP_ID_PATH, 'data', 'stock'), (s) => setStockLogs(s.docs.map(d => ({id:d.id, ...d.data()})).sort((a,b)=>b.timestamp-a.timestamp)));
-                const unsubCourt = utils.onSnapshot(utils.collection(db, APP_ID_PATH, 'data', 'court'), (s) => setCourtLogs(s.docs.map(d => ({id:d.id, ...d.data()})).sort((a,b)=>b.timestamp-a.timestamp)));
-                const unsubConfig = utils.onSnapshot(utils.doc(db, APP_ID_PATH, 'config', 'members', 'list'), (d) => {
-                    if (d.exists()) setPlayers(d.data().names || []);
-                });
+                const docRef = tools.doc(db, 'artifacts', appID, 'public', 'data', 'members');
+                const unsub = tools.onSnapshot(docRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        setPlayers(docSnap.data().list || []);
+                    }
+                }, (err) => console.error("Firestore Read Error:", err));
 
-                return () => { unsubUsage(); unsubStock(); unsubCourt(); unsubConfig(); };
-            }, [user, isFirebaseReady]);
+                return () => unsub();
+            }, [user]);
 
-            // คำนวณราคาเฉลี่ยต่อลูก (ราคาหารด้วยจำนวนลูก 12 ลูกต่อหลอด)
-            const averagePricePerShuttle = useMemo(() => {
-                const totalTube = stockLogs.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-                const totalCost = stockLogs.reduce((sum, item) => sum + Number(item.price || 0), 0);
-                const totalShuttles = totalTube * 12;
-                return totalShuttles > 0 ? totalCost / totalShuttles : 75; // Default 75 THB/pcs
-            }, [stockLogs]);
-
-            const playerStats = useMemo(() => {
-                const stats = {};
-                players.forEach(p => stats[p] = 0);
+            const handleAddPlayer = async () => {
+                if (!newPlayerName.trim()) return;
+                const updatedList = [...players, newPlayerName.trim()];
                 
-                // 1. คำนวณค่าลูกตามการใช้งานจริง
-                usageLogs.forEach(log => {
-                    const costTotal = Number(log.shuttleCount) * averagePricePerShuttle;
-                    const costPer = costTotal / (log.players?.length || 1);
-                    log.players?.forEach(p => { if(stats[p]!==undefined) stats[p] += costPer; });
-                });
-
-                // 2. คำนวณค่าคอร์ด (หารเท่า)
-                courtLogs.forEach(log => {
-                    const feePer = Number(log.fee) / (log.membersAtTime?.length || 1);
-                    log.membersAtTime?.forEach(p => { if(stats[p]!==undefined) stats[p] += feePer; });
-                });
-
-                // 3. หักลบยอดที่สำรองจ่ายไป (ทั้งค่าลูกและค่าคอร์ด)
-                stockLogs.forEach(log => {
-                    if (log.payer && stats[log.payer]!==undefined) stats[log.payer] -= Number(log.price);
-                });
-                courtLogs.forEach(log => {
-                    if (log.payer && stats[log.payer]!==undefined) stats[log.payer] -= Number(log.fee);
-                });
-
-                return Object.keys(stats).map(name => ({ name, expense: Math.round(stats[name]) })).sort((a,b) => b.expense - a.expense);
-            }, [usageLogs, stockLogs, courtLogs, players, averagePricePerShuttle]);
-
-            const handlePinSubmit = (e) => {
-                e.preventDefault();
-                if (pin === MASTER_PIN) {
-                    if (pendingAction) pendingAction();
-                    setShowPinModal(false);
-                    setPin("");
-                    setPinError(false);
+                if (window.FB_READY && user) {
+                    const { db, tools, appID } = window.fb;
+                    try {
+                        const docRef = tools.doc(db, 'artifacts', appID, 'public', 'data', 'members');
+                        await tools.setDoc(docRef, { list: updatedList });
+                        setNewPlayerName('');
+                    } catch (err) {
+                        alert("Error: " + err.message);
+                    }
                 } else {
-                    setPinError(true);
-                    setPin("");
+                    setPlayers(updatedList);
+                    setNewPlayerName('');
                 }
             };
 
-            const triggerAction = (action) => {
-                setPendingAction(() => action);
-                setShowPinModal(true);
+            const handleRemovePlayer = async (name) => {
+                const updatedList = players.filter(p => p !== name);
+                if (window.FB_READY && user) {
+                    const { db, tools, appID } = window.fb;
+                    try {
+                        const docRef = tools.doc(db, 'artifacts', appID, 'public', 'data', 'members');
+                        await tools.setDoc(docRef, { list: updatedList });
+                    } catch (err) { console.error(err); }
+                } else {
+                    setPlayers(updatedList);
+                }
             };
 
-            if (!isFirebaseReady) {
+            if (isLoading) {
                 return (
-                    <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 text-white p-10 text-center">
-                        <div className="animate-bounce mb-4"><Icon name="shuttle" size={48} className="text-indigo-400" /></div>
-                        <h2 className="text-xl font-black">กำลังโหลดข้อมูล...</h2>
+                    <div className="h-screen flex items-center justify-center bg-slate-900 text-white font-bold">
+                        <div className="animate-pulse">กำลังเชื่อมต่อฐานข้อมูล...</div>
                     </div>
                 );
             }
 
-            const { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, LabelList } = window.Recharts;
-
             return (
-                <div className="min-h-screen pb-28">
+                <div className="max-w-md mx-auto min-h-screen flex flex-col pb-24 bg-white shadow-2xl">
                     {/* Header */}
-                    <nav className="bg-white/80 backdrop-blur-md sticky top-0 z-40 border-b border-slate-100 p-4 flex justify-between items-center px-6">
-                        <div className="flex items-center gap-2">
-                            <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg"><Icon name="dashboard" /></div>
-                            <h1 className="font-extrabold text-xl tracking-tighter text-slate-900 uppercase">Badm.Tracker</h1>
+                    <header className="p-6 bg-white border-b sticky top-0 z-10 flex justify-between items-center">
+                        <div>
+                            <h1 className="text-2xl font-black text-slate-900 italic uppercase">Badm Hub</h1>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                {window.FB_READY ? "🟢 Online" : "🟡 Demo Mode"}
+                            </p>
                         </div>
-                        <button onClick={() => setActiveTab('settings')} className="p-2 text-slate-400 hover:text-indigo-600 transition-colors"><Icon name="settings" size={24}/></button>
-                    </nav>
+                        <button onClick={() => setActiveTab('settings')} className="p-2 bg-slate-100 rounded-full text-slate-600">
+                            <Icon name="settings" size={20} />
+                        </button>
+                    </header>
 
-                    <div className="max-w-xl mx-auto p-5 space-y-6">
-                        {/* Tab: Dashboard */}
+                    <main className="flex-1 p-6">
                         {activeTab === 'dashboard' && (
                             <div className="space-y-6">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
-                                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">เฉลี่ยค้างจ่าย</p>
-                                        <p className="text-3xl font-black text-slate-800 mt-1">
-                                            {playerStats.length > 0 ? Math.round(playerStats.reduce((a,b)=>a+(b.expense > 0 ? b.expense : 0),0)/playerStats.length) : 0} 
-                                            <span className="text-xs text-slate-300 ml-1 font-bold">฿</span>
-                                        </p>
-                                    </div>
-                                    <div className="bg-indigo-600 p-6 rounded-[2rem] shadow-xl text-white">
-                                        <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">ราคา/ลูก (เฉลี่ย)</p>
-                                        <p className="text-3xl font-black mt-1">{Math.round(averagePricePerShuttle)} <span className="text-xs text-indigo-300 font-bold">฿</span></p>
-                                    </div>
+                                <div className="bg-indigo-600 p-8 rounded-[2.5rem] text-white shadow-xl">
+                                    <p className="text-xs font-bold opacity-70 uppercase tracking-widest">สมาชิกทั้งหมด</p>
+                                    <h2 className="text-5xl font-black mt-2">{players.length} <span className="text-lg">คน</span></h2>
                                 </div>
-
-                                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-                                    <h2 className="text-sm font-black text-slate-800 flex items-center gap-2 mb-8 uppercase tracking-tight"><Icon name="wallet" size={16} className="text-indigo-500" /> สรุปยอดเงินรายบุคคล</h2>
-                                    <div className="h-[450px]">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <BarChart data={playerStats} layout="vertical" margin={{ left: -20, right: 40 }}>
-                                                <XAxis type="number" hide />
-                                                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 12, fontWeight: 700, fill: '#475569'}} width={80} />
-                                                <Bar dataKey="expense" radius={[0, 10, 10, 0]} barSize={26}>
-                                                    {playerStats.map((e, i) => <Cell key={i} fill={e.expense > 0 ? '#6366f1' : '#10b981'} />)}
-                                                    <LabelList dataKey="expense" position="right" style={{fontSize: 11, fontWeight: 800, fill: '#64748b'}} formatter={v => `${v} ฿`} />
-                                                </Bar>
-                                            </BarChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                    <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                        <span>🟢 เป็นเจ้าหนี้ (สำรองจ่ายเยอะ)</span>
-                                        <span>🔵 เป็นลูกหนี้ (ค้างจ่าย)</span>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Tab: Input (Record Play) */}
-                        {activeTab === 'input' && (
-                            <div className="space-y-6">
-                                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
-                                    <h3 className="font-black text-slate-800 flex items-center gap-2 uppercase"><Icon name="shuttle" className="text-indigo-500" /> บันทึกการตีวันนี้</h3>
-                                    
-                                    <div className="relative">
-                                        <button onClick={() => setIsDropdownOpen(!isDropdownOpen)} className="w-full p-5 bg-slate-50 rounded-2xl text-left text-sm font-bold flex justify-between items-center border border-transparent focus:border-indigo-100">
-                                            <span className={selectedPlayers.length ? "text-slate-800" : "text-slate-400"}>
-                                                {selectedPlayers.length > 0 ? `เลือกแล้ว ${selectedPlayers.length} คน` : 'ใครมาตีบ้าง?'}
-                                            </span>
-                                            <Icon name="user" size={18} className="text-indigo-400"/>
-                                        </button>
-                                        
-                                        {isDropdownOpen && (
-                                            <div className="absolute top-full left-0 w-full mt-2 bg-white p-4 rounded-3xl border border-slate-100 shadow-2xl z-50 grid grid-cols-2 gap-2 animate-in fade-in slide-in-from-top-2">
-                                                {players.map(p => (
-                                                    <button key={p} onClick={() => setSelectedPlayers(s => s.includes(p) ? s.filter(x=>x!==p) : [...s,p])} className={`p-3 rounded-xl text-xs font-bold transition-all ${selectedPlayers.includes(p) ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 border border-slate-100'}`}>{p}</button>
-                                                ))}
-                                                <button onClick={()=>setIsDropdownOpen(false)} className="col-span-2 bg-slate-900 text-white p-4 rounded-xl mt-2 text-xs font-black">ยืนยันรายชื่อ</button>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="bg-slate-50 p-5 rounded-2xl">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">จำนวนลูกที่ใช้ (ลูก)</label>
-                                        <input type="number" placeholder="0" value={shuttleUsed} onChange={e=>setShuttleUsed(e.target.value)} className="w-full bg-transparent outline-none font-black text-4xl text-indigo-600" />
-                                    </div>
-
-                                    <button onClick={() => triggerAction(async () => {
-                                        if(!shuttleUsed || selectedPlayers.length === 0) return;
-                                        await utils.addDoc(utils.collection(db, APP_ID_PATH, 'data', 'usage'), { 
-                                            players: selectedPlayers, 
-                                            shuttleCount: shuttleUsed, 
-                                            timestamp: Date.now(), 
-                                            date: new Date().toLocaleDateString('th-TH') 
-                                        });
-                                        setSelectedPlayers([]); setShuttleUsed(''); setActiveTab('dashboard');
-                                    })} className="w-full bg-indigo-600 text-white p-5 rounded-2xl font-black shadow-xl hover:bg-indigo-700 transition-all active:scale-95">บันทึกสถิติ</button>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Tab: Finance (Stock & Court Fees) */}
-                        {activeTab === 'finance' && (
-                            <div className="space-y-6">
-                                <div className="bg-white p-2 rounded-[2rem] border border-slate-100 shadow-sm flex">
-                                    <button onClick={()=>setFinanceType('shuttle')} className={`flex-1 py-4 rounded-[1.8rem] font-black text-xs transition-all ${financeType === 'shuttle' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}>ซื้อลูกแบด</button>
-                                    <button onClick={()=>setFinanceType('court')} className={`flex-1 py-4 rounded-[1.8rem] font-black text-xs transition-all ${financeType === 'court' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400'}`}>จ่ายค่าคอร์ด</button>
-                                </div>
-
-                                <div className={`p-8 rounded-[2.5rem] shadow-xl text-white transition-colors duration-500 ${financeType === 'shuttle' ? 'bg-indigo-600' : 'bg-emerald-600'}`}>
-                                    <h3 className="font-black text-lg mb-6 flex items-center gap-2">
-                                        <Icon name={financeType === 'shuttle' ? 'shuttle' : 'court'} /> 
-                                        {financeType === 'shuttle' ? 'บันทึกการซื้อลูก' : 'บันทึกค่าคอร์ด'}
-                                    </h3>
-                                    
-                                    <div className="space-y-4">
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <div className="bg-white/10 p-4 rounded-2xl">
-                                                <label className="text-[10px] font-bold opacity-60 uppercase mb-1 block">ราคาจ่ายจริง (฿)</label>
-                                                <input type="number" placeholder="0" value={financeAmount} onChange={e=>setFinanceAmount(e.target.value)} className="w-full bg-transparent outline-none font-black text-2xl" />
-                                            </div>
-                                            {financeType === 'shuttle' ? (
-                                                <div className="bg-white/10 p-4 rounded-2xl">
-                                                    <label className="text-[10px] font-bold opacity-60 uppercase mb-1 block">จำนวน (หลอด)</label>
-                                                    <input type="number" placeholder="0" value={financeQty} onChange={e=>setFinanceQty(e.target.value)} className="w-full bg-transparent outline-none font-black text-2xl" />
-                                                </div>
-                                            ) : (
-                                                <div className="bg-white/10 p-4 rounded-2xl">
-                                                    <label className="text-[10px] font-bold opacity-60 uppercase mb-1 block">เดือน</label>
-                                                    <input type="month" value={financeMonth} onChange={e=>setFinanceMonth(e.target.value)} className="w-full bg-transparent outline-none font-bold text-sm mt-2" />
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div className="bg-white/10 p-4 rounded-2xl">
-                                            <label className="text-[10px] font-bold opacity-60 uppercase mb-1 block">ใครเป็นคนสำรองจ่าย?</label>
-                                            <select value={financePayer} onChange={e=>setFinancePayer(e.target.value)} className="w-full bg-transparent outline-none font-bold text-lg mt-1 appearance-none">
-                                                <option value="" className="text-slate-800">เลือกรายชื่อ...</option>
-                                                {players.map(p => <option key={p} value={p} className="text-slate-800">{p}</option>)}
-                                            </select>
-                                        </div>
-
-                                        <button onClick={() => triggerAction(async () => {
-                                            if(!financeAmount || !financePayer) return;
-                                            
-                                            if (financeType === 'shuttle') {
-                                                await utils.addDoc(utils.collection(db, APP_ID_PATH, 'data', 'stock'), { 
-                                                    price: financeAmount, 
-                                                    quantity: financeQty || 1, 
-                                                    payer: financePayer, 
-                                                    timestamp: Date.now() 
-                                                });
-                                            } else {
-                                                await utils.addDoc(utils.collection(db, APP_ID_PATH, 'data', 'court'), { 
-                                                    fee: financeAmount, 
-                                                    month: financeMonth, 
-                                                    payer: financePayer, 
-                                                    membersAtTime: players, 
-                                                    timestamp: Date.now() 
-                                                });
-                                            }
-                                            setFinanceAmount(''); setFinanceQty(''); setFinancePayer(''); setActiveTab('dashboard');
-                                        })} className="w-full bg-white text-slate-900 p-5 rounded-2xl font-black shadow-lg hover:bg-slate-50 transition-all active:scale-95">บันทึกยอดการเงิน</button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Tab: History */}
-                        {activeTab === 'history' && (
-                            <div className="space-y-4 animate-in fade-in duration-300">
-                                <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest px-2">ประวัติกิจกรรมล่าสุด</h2>
                                 
-                                <div className="space-y-3">
-                                    {/* รวม Log ทั้งหมดมาเรียงลำดับใหม่ */}
-                                    {[...usageLogs.map(l => ({...l, type:'usage'})), 
-                                      ...stockLogs.map(l => ({...l, type:'stock'})), 
-                                      ...courtLogs.map(l => ({...l, type:'court'}))]
-                                      .sort((a,b) => b.timestamp - a.timestamp)
-                                      .slice(0, 20)
-                                      .map(log => (
-                                        <div key={log.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex justify-between items-center group">
-                                            <div className="flex items-center gap-4">
-                                                <div className={`p-3 rounded-2xl ${
-                                                    log.type === 'usage' ? 'bg-indigo-50 text-indigo-500' : 
-                                                    log.type === 'stock' ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500'
-                                                }`}>
-                                                    <Icon name={log.type === 'usage' ? 'shuttle' : log.type === 'stock' ? 'wallet' : 'court'} size={20}/>
+                                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                                    <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                                        <Icon name="user" size={16} className="text-indigo-500" /> สมาชิกในทีม
+                                    </h3>
+                                    {players.length === 0 ? (
+                                        <p className="text-slate-400 text-sm text-center py-10">ยังไม่มีรายชื่อ</p>
+                                    ) : (
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {players.map(p => (
+                                                <div key={p} className="p-3 bg-white border border-slate-100 rounded-xl text-xs font-bold text-slate-600">
+                                                    {p}
                                                 </div>
-                                                <div>
-                                                    <p className="text-xs font-black text-slate-800">
-                                                        {log.type === 'usage' ? `ตีแบด (${log.shuttleCount} ลูก)` : 
-                                                         log.type === 'stock' ? `ซื้อลูก (${log.quantity} หลอด)` : `ค่าคอร์ด (${log.month})`}
-                                                    </p>
-                                                    <p className="text-[10px] font-bold text-slate-400">
-                                                        {log.type === 'usage' ? log.date : `${log.payer} จ่าย ${log.type === 'stock' ? log.price : log.fee} ฿`}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <button onClick={()=>triggerAction(()=>utils.deleteDoc(utils.doc(db, APP_ID_PATH, 'data', log.type === 'usage' ? 'usage' : log.type === 'stock' ? 'stock' : 'court', log.id)))} className="text-slate-200 hover:text-red-400 transition-colors p-2"><Icon name="trash" size={18}/></button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'settings' && (
+                            <div className="space-y-6">
+                                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                                    <h3 className="font-black text-slate-800 mb-4 uppercase text-xs">เพิ่มสมาชิกใหม่</h3>
+                                    <div className="flex gap-2">
+                                        <input 
+                                            type="text" 
+                                            value={newPlayerName}
+                                            onChange={(e) => setNewPlayerName(e.target.value)}
+                                            placeholder="ใส่ชื่อเล่น..."
+                                            className="flex-1 bg-slate-50 p-4 rounded-2xl outline-none font-bold"
+                                        />
+                                        <button 
+                                            onClick={handleAddPlayer}
+                                            className="bg-indigo-600 text-white px-6 rounded-2xl font-black shadow-lg"
+                                        >
+                                            <Icon name="plus" />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-widest px-2">จัดการรายชื่อ</h3>
+                                    {players.map(p => (
+                                        <div key={p} className="bg-white p-4 rounded-2xl flex justify-between items-center border border-slate-100">
+                                            <span className="font-bold text-slate-700">{p}</span>
+                                            <button onClick={() => handleRemovePlayer(p)} className="text-red-400 p-2">
+                                                <Icon name="trash" size={18} />
+                                            </button>
                                         </div>
                                     ))}
                                 </div>
                             </div>
                         )}
+                    </main>
 
-                        {/* Tab: Settings */}
-                        {activeTab === 'settings' && (
-                            <div className="space-y-6">
-                                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
-                                    <h3 className="font-black text-slate-800 flex items-center gap-2 uppercase tracking-tight"><Icon name="user" className="text-indigo-500" /> สมาชิกกลุ่ม</h3>
-                                    <div className="flex gap-2">
-                                        <input type="text" placeholder="พิมพ์ชื่อเล่น..." value={newPlayerName} onChange={e=>setNewPlayerName(e.target.value)} className="flex-1 bg-slate-50 p-4 rounded-2xl font-bold outline-none border border-transparent focus:border-indigo-100" />
-                                        <button onClick={()=>triggerAction(async ()=>{
-                                            if(!newPlayerName) return;
-                                            await utils.setDoc(utils.doc(db, APP_ID_PATH, 'config', 'members', 'list'), { names: [...players, newPlayerName] });
-                                            setNewPlayerName('');
-                                        })} className="bg-indigo-600 text-white p-4 rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"><Icon name="plus"/></button>
-                                    </div>
-                                    <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
-                                        {players.map(p => (
-                                            <div key={p} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-transparent hover:border-slate-100 transition-all">
-                                                <span className="font-bold text-slate-700">{p}</span>
-                                                <button onClick={()=>triggerAction(async ()=>{
-                                                    await utils.setDoc(utils.doc(db, APP_ID_PATH, 'config', 'members', 'list'), { names: players.filter(x=>x!==p) });
-                                                })} className="text-slate-300 hover:text-red-400 transition-colors"><Icon name="trash" size={16}/></button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                                
-                                <div className="bg-red-50 p-6 rounded-[2rem] border border-red-100">
-                                    <p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-2">Danger Zone</p>
-                                    <button onClick={()=>triggerAction(async ()=>{
-                                        // Logic เพื่อเคลียร์หนี้ (ใช้การลบประวัติทั้งหมด)
-                                        if(!confirm('ต้องการล้างประวัติทั้งหมดเพื่อเริ่มนับ 0 ใหม่ใช่หรือไม่?')) return;
-                                        usageLogs.forEach(l => utils.deleteDoc(utils.doc(db, APP_ID_PATH, 'data', 'usage', l.id)));
-                                        stockLogs.forEach(l => utils.deleteDoc(utils.doc(db, APP_ID_PATH, 'data', 'stock', l.id)));
-                                        courtLogs.forEach(l => utils.deleteDoc(utils.doc(db, APP_ID_PATH, 'data', 'court', l.id)));
-                                        setActiveTab('dashboard');
-                                    })} className="w-full bg-white text-red-500 border border-red-200 p-4 rounded-2xl font-black text-xs shadow-sm hover:bg-red-500 hover:text-white transition-all">ล้างข้อมูลการตีและหนี้ทั้งหมด</button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Navigation Bar */}
-                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-slate-900/95 backdrop-blur-xl p-3 rounded-[3rem] flex justify-around items-center z-50 shadow-2xl border border-white/10">
-                        <button onClick={() => setActiveTab('dashboard')} className={`p-4 rounded-[2rem] transition-all duration-300 ${activeTab === 'dashboard' ? 'bg-white text-indigo-600 shadow-xl scale-110' : 'text-slate-500 hover:text-white'}`}><Icon name="dashboard" /></button>
-                        <button onClick={() => setActiveTab('input')} className={`p-4 rounded-[2rem] transition-all duration-300 ${activeTab === 'input' ? 'bg-white text-indigo-600 shadow-xl scale-110' : 'text-slate-500 hover:text-white'}`}><Icon name="shuttle" /></button>
-                        <button onClick={() => setActiveTab('finance')} className={`p-4 rounded-[2rem] transition-all duration-300 ${activeTab === 'finance' ? 'bg-white text-indigo-600 shadow-xl scale-110' : 'text-slate-500 hover:text-white'}`}><Icon name="wallet" /></button>
-                        <button onClick={() => setActiveTab('history')} className={`p-4 rounded-[2rem] transition-all duration-300 ${activeTab === 'history' ? 'bg-white text-indigo-600 shadow-xl scale-110' : 'text-slate-500 hover:text-white'}`}><Icon name="history" /></button>
-                    </div>
-
-                    {/* PIN Modal */}
-                    {showPinModal && (
-                        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-4">
-                            <div className="bg-white p-8 rounded-[3rem] w-full max-w-xs text-center shadow-2xl animate-in fade-in zoom-in duration-200">
-                                <div className="w-16 h-16 bg-indigo-50 rounded-3xl flex items-center justify-center mx-auto mb-4">
-                                    <Icon name="lock" size={32} className="text-indigo-500"/>
-                                </div>
-                                <h3 className="font-black text-slate-800 mb-6 uppercase tracking-tight">กรุณากรอก PIN</h3>
-                                <form onSubmit={handlePinSubmit} className="space-y-6">
-                                    <input type="password" value={pin} onChange={e=>setPin(e.target.value)} maxLength={4} autoFocus className={`w-full text-center text-4xl tracking-[1rem] p-5 bg-slate-50 rounded-2xl border-2 transition-all ${pinError ? 'border-red-400 bg-red-50' : 'border-transparent focus:border-indigo-400 focus:bg-white'}`} placeholder="••••" />
-                                    <div className="flex gap-4">
-                                        <button type="button" onClick={()=>setShowPinModal(false)} className="flex-1 font-bold text-slate-400">ยกเลิก</button>
-                                        <button type="submit" className="flex-1 bg-indigo-600 text-white p-4 rounded-2xl font-black shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all">ยืนยัน</button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    )}
+                    {/* Bottom Nav */}
+                    <nav className="fixed bottom-6 left-6 right-6 bg-slate-900 p-3 rounded-[2rem] flex justify-between shadow-2xl">
+                        <button onClick={() => setActiveTab('dashboard')} className={`flex-1 py-3 rounded-2xl flex flex-col items-center gap-1 ${activeTab === 'dashboard' ? 'bg-white text-slate-900' : 'text-slate-400'}`}>
+                            <Icon name="dashboard" size={18} />
+                            <span className="text-[10px] font-bold">HOME</span>
+                        </button>
+                        <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 rounded-2xl flex flex-col items-center gap-1 ${activeTab === 'settings' ? 'bg-white text-slate-900' : 'text-slate-400'}`}>
+                            <Icon name="user" size={18} />
+                            <span className="text-[10px] font-bold">PLAYERS</span>
+                        </button>
+                    </nav>
                 </div>
             );
         };
