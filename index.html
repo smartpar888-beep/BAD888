@@ -2,125 +2,75 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8" />
-  <title>Badminton Hub – Firebase Ready</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Badminton Hub</title>
 
   <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- React 18 -->
-  <script type="module">
-    import React from "https://esm.sh/react@18";
-    import ReactDOM from "https://esm.sh/react-dom@18/client";
+  <!-- React -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+  <!-- Babel (จำเป็นมาก) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    /* ================= FIREBASE CONFIG ================= */
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+</head>
+
+<body class="bg-slate-50">
+  <div id="root"></div>
+
+  <script type="text/babel">
     const firebaseConfig = {
       apiKey: "AIzaSyBRHvY1JwC9WtXjsiqHjaGIE08IW9UZ28k",
       authDomain: "badminton-f29a7.firebaseapp.com",
-      projectId: "badminton-f29a7",
-      storageBucket: "badminton-f29a7.appspot.com",
-      messagingSenderId: "880213955717",
-      appId: "1:880213955717:web:ca8ab9ae8a495fae0145ec"
+      projectId: "badminton-f29a7"
     };
 
-    const APP_ID = "badminton_v1";
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const auth = firebase.auth();
 
-    /* ================= INIT ================= */
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const auth = getAuth(app);
+    auth.signInAnonymously();
 
-    signInAnonymously(auth)
-      .then(() => console.log("✅ Anonymous auth success"))
-      .catch(err => console.error("❌ Auth error", err));
-
-    /* ================= APP ================= */
     function App() {
-      const [user, setUser] = React.useState(null);
-      const [logs, setLogs] = React.useState([]);
       const [count, setCount] = React.useState("");
 
-      React.useEffect(() => {
-        const unsubAuth = onAuthStateChanged(auth, u => {
-          setUser(u);
-          if (!u) return;
-
-          const unsub = onSnapshot(
-            collection(db, "apps", APP_ID, "usage"),
-            snap => {
-              setLogs(
-                snap.docs.map(d => ({ id: d.id, ...d.data() }))
-              );
-            }
-          );
-
-          return () => unsub();
-        });
-
-        return () => unsubAuth();
-      }, []);
-
       const save = async () => {
-        try {
-          await addDoc(
-            collection(db, "apps", APP_ID, "usage"),
-            {
-              shuttleCount: Number(count),
-              timestamp: Date.now()
-            }
-          );
-          setCount("");
-          console.log("✅ Saved to Firestore");
-        } catch (err) {
-          console.error("❌ Firestore error:", err);
-          alert(err.message);
-        }
+        await db.collection("apps")
+          .doc("badminton_v1")
+          .collection("usage")
+          .add({
+            shuttleCount: Number(count),
+            timestamp: Date.now()
+          });
       };
-
-      if (!user) {
-        return <div className="p-10 text-center">Connecting Firebase…</div>;
-      }
 
       return (
         <div className="max-w-md mx-auto p-6 space-y-4">
-          <h1 className="text-xl font-black">Badminton Hub</h1>
+          <h1 className="text-xl font-bold">Badminton Hub</h1>
 
           <input
-            type="number"
             className="w-full p-3 border rounded-xl"
-            placeholder="จำนวนลูกแบด"
+            type="number"
             value={count}
             onChange={e => setCount(e.target.value)}
           />
 
           <button
             onClick={save}
-            className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold"
+            className="w-full py-3 bg-indigo-600 text-white rounded-xl"
           >
             บันทึก Firebase
           </button>
-
-          <div className="mt-6">
-            <h2 className="font-bold mb-2">History</h2>
-            {logs.map(l => (
-              <div key={l.id} className="text-sm text-slate-600">
-                • {l.shuttleCount} ลูก
-              </div>
-            ))}
-          </div>
         </div>
       );
     }
 
     ReactDOM.createRoot(document.getElementById("root")).render(<App />);
   </script>
-</head>
-
-<body class="bg-slate-50">
-  <div id="root"></div>
 </body>
 </html>
