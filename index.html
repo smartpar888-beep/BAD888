@@ -33,7 +33,6 @@
         window.FB_READY = false;
         window.FB_ERROR = null;
 
-        // ตรวจสอบเบื้องต้นว่ามีการใส่ค่าหรือยัง
         const isConfigPopulated = firebaseConfig.projectId && firebaseConfig.projectId !== "your-app";
 
         if (isConfigPopulated) {
@@ -117,7 +116,9 @@
             useEffect(() => {
                 if (!user || !window.FB_READY) return;
                 const { db, tools, appID } = window.fb;
-                const docRef = tools.doc(db, 'artifacts', appID, 'public', 'data', 'members');
+                // แก้ไข Path ให้ถูกต้องตาม Rule 1: /artifacts/{appId}/public/data/{collectionName}/{docId}
+                // เพื่อให้เป็นเลขคู่ (6 segments)
+                const docRef = tools.doc(db, 'artifacts', appID, 'public', 'data', 'config', 'members');
                 const unsub = tools.onSnapshot(docRef, (docSnap) => {
                     if (docSnap.exists()) {
                         setPlayers(docSnap.data().list || []);
@@ -134,7 +135,7 @@
                 if (window.FB_READY && user) {
                     const { db, tools, appID } = window.fb;
                     try {
-                        const docRef = tools.doc(db, 'artifacts', appID, 'public', 'data', 'members');
+                        const docRef = tools.doc(db, 'artifacts', appID, 'public', 'data', 'config', 'members');
                         await tools.setDoc(docRef, { list: updatedList });
                         setNewPlayerName('');
                     } catch (err) { alert(err.message); }
@@ -149,7 +150,7 @@
                 if (window.FB_READY && user) {
                     const { db, tools, appID } = window.fb;
                     try {
-                        const docRef = tools.doc(db, 'artifacts', appID, 'public', 'data', 'members');
+                        const docRef = tools.doc(db, 'artifacts', appID, 'public', 'data', 'config', 'members');
                         await tools.setDoc(docRef, { list: updatedList });
                     } catch (err) { console.error(err); }
                 } else {
