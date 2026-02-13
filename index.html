@@ -16,40 +16,36 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
         import { getFirestore, collection, onSnapshot, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
-        // --- แก้ไขค่า Firebase Config ตรงนี้ ---
-        const firebaseConfig = {
-            apiKey: "AIzaSyBRHvY1JwC9WtXjsiqHjaGIE08IW9UZ28k", // วางค่า API Key ของคุณที่นี่
+        // Global Variables from Environment
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "AIzaSyBRHvY1JwC9WtXjsiqHjaGIE08IW9UZ28k", 
             authDomain: "badminton-f29a7.firebaseapp.com",
             projectId: "badminton-f29a7",
             storageBucket: "badminton-f29a7.firebasestorage.app",
             messagingSenderId: "880213955717",
             appId: "1:880213955717:web:ca8ab9ae8a495fae0145ec"
         };
-        // ----------------------------------
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'badm-tracker-001';
+        const initialToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        const appID = "badm-tracker-001"; 
         window.FB_READY = false;
         window.FB_ERROR = null;
 
-        const isConfigPopulated = firebaseConfig.projectId && firebaseConfig.projectId !== "your-app";
-
-        if (isConfigPopulated) {
-            try {
-                const app = initializeApp(firebaseConfig);
-                const auth = getAuth(app);
-                const db = getFirestore(app);
-                
-                window.fb = { 
-                    db, auth, appID,
-                    tools: { onSnapshot, doc, setDoc, signInAnonymously, onAuthStateChanged }
-                };
-                window.FB_READY = true;
-            } catch (e) {
-                window.FB_ERROR = e.message;
-                console.error("Firebase init error:", e);
-            }
+        try {
+            const app = initializeApp(firebaseConfig);
+            const auth = getAuth(app);
+            const db = getFirestore(app);
+            
+            window.fb = { 
+                db, auth, appId,
+                tools: { onSnapshot, doc, setDoc, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
+            };
+            window.FB_READY = true;
+        } catch (e) {
+            window.FB_ERROR = e.message;
+            console.error("Firebase init error:", e);
         }
     </script>
 
@@ -98,16 +94,22 @@
                     return;
                 }
                 const { auth, tools } = window.fb;
-                const unsubAuth = tools.onAuthStateChanged(auth, async (u) => {
-                    if (u) {
-                        setUser(u);
-                    } else {
-                        try { 
-                            await tools.signInAnonymously(auth); 
-                        } catch (err) { 
-                            setErrorMessage("Auth Error: " + err.message);
+                
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await tools.signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await tools.signInAnonymously(auth);
                         }
+                    } catch (err) {
+                        setErrorMessage("Auth Error: " + err.message);
                     }
+                };
+
+                initAuth();
+                const unsubAuth = tools.onAuthStateChanged(auth, (u) => {
+                    setUser(u);
                     setIsLoading(false);
                 });
                 return () => unsubAuth();
@@ -115,10 +117,11 @@
 
             useEffect(() => {
                 if (!user || !window.FB_READY) return;
-                const { db, tools, appID } = window.fb;
-                // แก้ไข Path ให้ถูกต้องตาม Rule 1: /artifacts/{appId}/public/data/{collectionName}/{docId}
-                // เพื่อให้เป็นเลขคู่ (6 segments)
-                const docRef = tools.doc(db, 'artifacts', appID, 'public', 'data', 'config', 'members');
+                const { db, tools, appId } = window.fb;
+                
+                // Rule 1 Compliance: /artifacts/{appId}/public/data/config/members (6 segments)
+                const docRef = tools.doc(db, 'artifacts', appId, 'public', 'data', 'config', 'members');
+                
                 const unsub = tools.onSnapshot(docRef, (docSnap) => {
                     if (docSnap.exists()) {
                         setPlayers(docSnap.data().list || []);
@@ -130,31 +133,27 @@
             }, [user]);
 
             const handleAddPlayer = async () => {
-                if (!newPlayerName.trim()) return;
+                if (!newPlayerName.trim() || !user) return;
                 const updatedList = [...players, newPlayerName.trim()];
-                if (window.FB_READY && user) {
-                    const { db, tools, appID } = window.fb;
-                    try {
-                        const docRef = tools.doc(db, 'artifacts', appID, 'public', 'data', 'config', 'members');
-                        await tools.setDoc(docRef, { list: updatedList });
-                        setNewPlayerName('');
-                    } catch (err) { alert(err.message); }
-                } else {
-                    setPlayers(updatedList);
+                const { db, tools, appId } = window.fb;
+                try {
+                    const docRef = tools.doc(db, 'artifacts', appId, 'public', 'data', 'config', 'members');
+                    await tools.setDoc(docRef, { list: updatedList });
                     setNewPlayerName('');
+                } catch (err) { 
+                    setErrorMessage("Write Error: " + err.message);
                 }
             };
 
             const handleRemovePlayer = async (name) => {
+                if (!user) return;
                 const updatedList = players.filter(p => p !== name);
-                if (window.FB_READY && user) {
-                    const { db, tools, appID } = window.fb;
-                    try {
-                        const docRef = tools.doc(db, 'artifacts', appID, 'public', 'data', 'config', 'members');
-                        await tools.setDoc(docRef, { list: updatedList });
-                    } catch (err) { console.error(err); }
-                } else {
-                    setPlayers(updatedList);
+                const { db, tools, appId } = window.fb;
+                try {
+                    const docRef = tools.doc(db, 'artifacts', appId, 'public', 'data', 'config', 'members');
+                    await tools.setDoc(docRef, { list: updatedList });
+                } catch (err) { 
+                    setErrorMessage("Delete Error: " + err.message);
                 }
             };
 
@@ -181,7 +180,7 @@
                         <div>
                             <h1 className="text-2xl font-black text-slate-900 italic uppercase">Badm Hub</h1>
                             <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">
-                                {window.FB_READY ? "🟢 Online" : "🟡 Offline Mode"}
+                                {user ? "🟢 Online" : "🔴 Not Authenticated"}
                             </p>
                         </div>
                         <button onClick={() => setActiveTab('settings')} className="p-2.5 bg-slate-100 rounded-2xl text-slate-600">
@@ -202,9 +201,11 @@
                                         รายชื่อนักกีฬา
                                     </h3>
                                     <div className="grid grid-cols-2 gap-3">
-                                        {players.map((p, i) => (
+                                        {players.length > 0 ? players.map((p, i) => (
                                             <div key={i} className="p-4 bg-white border border-slate-100 rounded-2xl text-sm font-bold text-slate-700 shadow-sm">{p}</div>
-                                        ))}
+                                        )) : (
+                                            <p className="col-span-2 text-center text-slate-400 text-xs py-4 font-bold uppercase tracking-widest">ไม่มีข้อมูลสมาชิก</p>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -221,9 +222,9 @@
                                             onChange={(e) => setNewPlayerName(e.target.value)}
                                             onKeyPress={(e) => e.key === 'Enter' && handleAddPlayer()}
                                             placeholder="ระบุชื่อเล่น..."
-                                            className="flex-1 bg-slate-50 p-4 rounded-2xl outline-none font-bold text-slate-700"
+                                            className="flex-1 bg-slate-50 p-4 rounded-2xl outline-none font-bold text-slate-700 border-2 border-transparent focus:border-indigo-500"
                                         />
-                                        <button onClick={handleAddPlayer} className="bg-indigo-600 text-white px-6 rounded-2xl font-black">
+                                        <button onClick={handleAddPlayer} className="bg-indigo-600 text-white px-6 rounded-2xl font-black active:scale-95 transition-transform">
                                             <Icon name="plus" />
                                         </button>
                                     </div>
@@ -231,9 +232,11 @@
                                 <div className="space-y-2">
                                     <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-widest px-2">จัดการรายชื่อ</h3>
                                     {players.map((p, i) => (
-                                        <div key={i} className="bg-white p-4 pl-6 rounded-2xl flex justify-between items-center border border-slate-100">
+                                        <div key={i} className="bg-white p-4 pl-6 rounded-2xl flex justify-between items-center border border-slate-100 group hover:border-red-100 transition-colors">
                                             <span className="font-bold text-slate-700">{p}</span>
-                                            <button onClick={() => handleRemovePlayer(p)} className="text-red-400 p-2"><Icon name="trash" size={18} /></button>
+                                            <button onClick={() => handleRemovePlayer(p)} className="text-slate-200 hover:text-red-400 p-2 transition-colors">
+                                                <Icon name="trash" size={18} />
+                                            </button>
                                         </div>
                                     ))}
                                 </div>
@@ -241,7 +244,7 @@
                         )}
                     </main>
 
-                    <nav className="fixed bottom-8 left-8 right-8 bg-slate-900 p-3 rounded-[2.5rem] flex justify-between shadow-2xl z-30">
+                    <nav className="fixed bottom-8 left-8 right-8 bg-slate-900/90 backdrop-blur-md p-3 rounded-[2.5rem] flex justify-between shadow-2xl z-30">
                         <button onClick={() => setActiveTab('dashboard')} className={`flex-1 py-4 rounded-[1.8rem] flex flex-col items-center gap-1 ${activeTab === 'dashboard' ? 'bg-white text-slate-900' : 'text-slate-500'}`}>
                             <Icon name="dashboard" size={18} />
                             <span className="text-[10px] font-black tracking-tighter">HOME</span>
