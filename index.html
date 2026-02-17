@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Badminton Hub - Security Enhanced</title>
+    <title>Badminton Hub - Security & Payment Enhanced</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -53,6 +53,7 @@
             const [usageLogs, setUsageLogs] = useState([]);
             const [stockLogs, setStockLogs] = useState([]);
             const [courtLogs, setCourtLogs] = useState([]);
+            const [paymentLogs, setPaymentLogs] = useState([]);
 
             // Form States
             const [shuttleCount, setShuttleCount] = useState('');
@@ -84,12 +85,13 @@
                 const unsubUsage = onSnapshot(getPath('usage'), s => setUsageLogs(s.docs.map(d => ({id: d.id, ...d.data()}))), e => console.error(e));
                 const unsubStock = onSnapshot(getPath('stock'), s => setStockLogs(s.docs.map(d => ({id: d.id, ...d.data()}))), e => console.error(e));
                 const unsubCourt = onSnapshot(getPath('court'), s => setCourtLogs(s.docs.map(d => ({id: d.id, ...d.data()}))), e => console.error(e));
+                const unsubPayments = onSnapshot(getPath('payments'), s => setPaymentLogs(s.docs.map(d => ({id: d.id, ...d.data()}))), e => console.error(e));
                 const unsubMembers = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'members'), d => {
                     if (d.exists()) setPlayers(d.data().list);
                     else setPlayers(['สมาชิก A', 'สมาชิก B']);
                 }, e => console.error(e));
 
-                return () => { unsubUsage(); unsubStock(); unsubCourt(); unsubMembers(); };
+                return () => { unsubUsage(); unsubStock(); unsubCourt(); unsubPayments(); unsubMembers(); };
             }, [user]);
 
             const stats = useMemo(() => {
@@ -101,19 +103,29 @@
                 const balances = {};
                 players.forEach(p => balances[p] = 0);
 
+                // คํานวณค่าลูกแบด
                 usageLogs.forEach(log => {
                     const costPerPerson = (log.shuttleCount * avgPrice) / (log.players?.length || 1);
                     log.players?.forEach(p => { if(balances[p] !== undefined) balances[p] += costPerPerson; });
                 });
 
+                // คํานวณค่าสนาม (คนเล่นแชร์กัน, คนจ่ายได้เครดิตคืน)
                 courtLogs.forEach(log => {
                     const feePerPerson = Number(log.fee) / (log.membersAtTime?.length || 1);
                     log.membersAtTime?.forEach(p => { if(balances[p] !== undefined) balances[p] += feePerPerson; });
                     if(balances[log.payer] !== undefined) balances[log.payer] -= Number(log.fee);
                 });
 
+                // คํานวณการซื้อลูกเข้าสต็อก (คนซื้อได้เครดิตคืน)
                 stockLogs.forEach(log => {
                     if(balances[log.buyer] !== undefined) balances[log.buyer] -= Number(log.price);
+                });
+
+                // หักล้างด้วยยอดที่มีการ "ล้างยอด" (Clear Payment)
+                paymentLogs.forEach(log => {
+                    if(balances[log.playerName] !== undefined) {
+                        balances[log.playerName] -= Number(log.amount);
+                    }
                 });
 
                 return { 
@@ -121,7 +133,7 @@
                     avgPrice, 
                     balances: Object.entries(balances).sort((a,b) => b[1] - a[1]) 
                 };
-            }, [players, usageLogs, stockLogs, courtLogs]);
+            }, [players, usageLogs, stockLogs, courtLogs, paymentLogs]);
 
             // Security Check Wrapper
             const requestSecurityAction = (actionFn) => {
@@ -152,19 +164,22 @@
                         timestamp: Date.now(),
                         date: new Date().toLocaleDateString('th-TH')
                     });
-                    setActiveTab('dashboard');
                 } catch (err) { alert("เกิดข้อผิดพลาด: " + err.message); }
             };
 
-            const clearFormStates = () => {
-                setShuttleCount('');
-                setSelectedPlayers([]);
-                setStockQty('');
-                setStockPrice('');
-                setStockBuyer('');
-                setCourtFee('');
-                setCourtPayer('');
-            }
+            const handleClearBalance = (name, currentAmount) => {
+                if (currentAmount <= 0) {
+                    alert("สมาชิกคนนี้ไม่มียอดค้างชำระ");
+                    return;
+                }
+                requestSecurityAction(() => {
+                    saveAction('payments', {
+                        playerName: name,
+                        amount: currentAmount,
+                        note: 'ล้างยอดทั้งหมด'
+                    });
+                });
+            };
 
             if (loading) return <div className="flex items-center justify-center min-h-screen font-bold">กำลังโหลด...</div>;
 
@@ -218,13 +233,24 @@
                             <div className="space-y-6 animate-in fade-in duration-500">
                                 <section>
                                     <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">สรุปยอดหนี้/เครดิต</h2>
-                                    <div className="space-y-2">
+                                    <div className="space-y-3">
                                         {stats.balances.map(([name, balance]) => (
-                                            <div key={name} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
-                                                <span className="font-bold text-slate-700">{name}</span>
-                                                <span className={`font-black ${balance > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                                    {balance > 0 ? `ค้างจ่าย ${Math.round(balance)}` : `จ่ายเกิน ${Math.abs(Math.round(balance))}`} ฿
-                                                </span>
+                                            <div key={name} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                                <div className="flex flex-col">
+                                                    <span className="font-bold text-slate-700">{name}</span>
+                                                    <span className={`text-xs font-black ${balance > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                                        {balance > 0 ? `ค้างจ่าย ${Math.round(balance)}` : `จ่ายเกิน ${Math.abs(Math.round(balance))}`} ฿
+                                                    </span>
+                                                </div>
+                                                {balance > 0 && (
+                                                    <button 
+                                                        onClick={() => handleClearBalance(name, balance)}
+                                                        className="p-3 bg-white text-indigo-600 rounded-xl shadow-sm border border-indigo-100 active:scale-95 transition"
+                                                        title="ล้างยอด"
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>
+                                                    </button>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -234,7 +260,7 @@
 
                         {activeTab === 'add' && (
                             <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500 pb-10">
-                                {/* ส่วนลงข้อมูลลูกแบด - บันทึกปกติไม่ต้องรหัส (ใช้บ่อย) */}
+                                {/* ลงการใช้งานลูกแบด */}
                                 <div className="bg-indigo-50 p-6 rounded-[2.5rem] border border-indigo-100">
                                     <h3 className="font-black text-indigo-700 mb-4 uppercase text-xs tracking-widest">ลงการใช้งานลูกแบด</h3>
                                     <input type="number" placeholder="จำนวนลูก..." className="w-full p-4 rounded-2xl border-none font-bold text-xl mb-3 shadow-sm" value={shuttleCount} onChange={e=>setShuttleCount(e.target.value)} />
@@ -246,11 +272,16 @@
                                             </button>
                                         ))}
                                     </div>
-                                    <button onClick={()=>saveAction('usage', {shuttleCount: Number(shuttleCount), players: selectedPlayers})} disabled={!shuttleCount || !selectedPlayers.length}
+                                    <button onClick={()=>{
+                                        saveAction('usage', {shuttleCount: Number(shuttleCount), players: selectedPlayers});
+                                        setShuttleCount('');
+                                        setSelectedPlayers([]);
+                                        setActiveTab('dashboard');
+                                    }} disabled={!shuttleCount || !selectedPlayers.length}
                                         className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-lg shadow-indigo-100 disabled:opacity-50">บันทึกใช้ลูก</button>
                                 </div>
 
-                                {/* ส่วนลงค่าสนาม - ต้องใช้รหัส */}
+                                {/* ลงค่าสนาม - ต้องใช้รหัส */}
                                 <div className="bg-emerald-50 p-6 rounded-[2.5rem] border border-emerald-100">
                                     <h3 className="font-black text-emerald-700 mb-4 uppercase text-xs tracking-widest flex justify-between items-center">
                                         <span>ลงค่าสนาม</span>
@@ -261,11 +292,16 @@
                                         <option value="">ใครเป็นคนจ่ายเงิน?</option>
                                         {players.map(p => <option key={p} value={p}>{p}</option>)}
                                     </select>
-                                    <button onClick={()=>requestSecurityAction(()=>saveAction('court', {fee: Number(courtFee), payer: courtPayer, membersAtTime: players}))} disabled={!courtFee || !courtPayer}
+                                    <button onClick={()=>requestSecurityAction(async ()=>{
+                                        await saveAction('court', {fee: Number(courtFee), payer: courtPayer, membersAtTime: players});
+                                        setCourtFee('');
+                                        setCourtPayer('');
+                                        setActiveTab('dashboard');
+                                    })} disabled={!courtFee || !courtPayer}
                                         className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-lg shadow-emerald-100 disabled:opacity-50">บันทึกค่าสนาม</button>
                                 </div>
 
-                                {/* ส่วนซื้อลูกเข้าสต็อก - ต้องใช้รหัส */}
+                                {/* ซื้อลูกเข้าสต็อก - ต้องใช้รหัส */}
                                 <div className="bg-slate-800 p-6 rounded-[2.5rem] text-white">
                                     <h3 className="font-black text-slate-400 mb-4 uppercase text-xs tracking-widest flex justify-between items-center">
                                         <span>ซื้อลูกเข้าคลัง</span>
@@ -279,7 +315,13 @@
                                         <option value="">ใครควักเงินซื้อ?</option>
                                         {players.map(p => <option key={p} value={p}>{p}</option>)}
                                     </select>
-                                    <button onClick={()=>requestSecurityAction(()=>saveAction('stock', {quantity: Number(stockQty), price: Number(stockPrice), buyer: stockBuyer}))} disabled={!stockQty || !stockPrice || !stockBuyer}
+                                    <button onClick={()=>requestSecurityAction(async ()=>{
+                                        await saveAction('stock', {quantity: Number(stockQty), price: Number(stockPrice), buyer: stockBuyer});
+                                        setStockQty('');
+                                        setStockPrice('');
+                                        setStockBuyer('');
+                                        setActiveTab('dashboard');
+                                    })} disabled={!stockQty || !stockPrice || !stockBuyer}
                                         className="w-full py-4 bg-slate-600 text-white rounded-2xl font-black shadow-lg disabled:opacity-50">เพิ่มสต็อก</button>
                                 </div>
                             </div>
@@ -311,17 +353,6 @@
                                             </div>
                                         ))}
                                     </div>
-                                </div>
-                                <div className="p-6">
-                                    <button 
-                                        onClick={() => requestSecurityAction(() => {
-                                            // Action for manual sync or full clear if needed
-                                            alert("ยืนยันตัวตนสำเร็จ ระบบพร้อมทำงาน");
-                                        })}
-                                        className="w-full p-4 border-2 border-dashed border-slate-200 text-slate-400 rounded-2xl text-xs font-bold"
-                                    >
-                                        ทดสอบระบบความปลอดภัย
-                                    </button>
                                 </div>
                             </div>
                         )}
