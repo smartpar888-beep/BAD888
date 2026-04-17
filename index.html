@@ -2,419 +2,90 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Badminton Hub - Security & Payment Enhanced</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <title>Modela IoT Monitor</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;500;700&display=swap');
-        body { font-family: 'Prompt', sans-serif; -webkit-tap-highlight-color: transparent; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        body { font-family: 'Kanit', sans-serif; background: #f0f2f5; display: flex; justify-content: center; padding: 40px; }
+        .card { background: white; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); width: 380px; padding: 30px; text-align: center; }
+        .label { color: #64748b; font-size: 0.9rem; margin-bottom: 5px; }
+        .board-name { font-size: 1.4rem; font-weight: bold; color: #1e293b; margin-bottom: 20px; }
+        .value-card { background: #eff6ff; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #dbeafe; }
+        .value { font-size: 3.5rem; font-weight: 800; color: #2563eb; }
+        .unit { font-size: 1.1rem; color: #3b82f6; }
+        .time { font-size: 0.8rem; color: #94a3b8; }
+        button { width: 100%; padding: 12px; border: none; border-radius: 8px; background: #2563eb; color: white; cursor: pointer; font-size: 1rem; }
+        button:hover { background: #1d4ed8; }
+        .status-online { color: #10b981; font-weight: bold; }
     </style>
 </head>
-<body class="bg-slate-50">
-    <div id="root"></div>
+<body>
 
-    <script type="text/babel" data-type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, setDoc, query, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+<div class="card">
+    <div class="label">ชื่ออุปกรณ์</div>
+    <div id="boardName" class="board-name">รอข้อมูล...</div>
+    
+    <div class="value-card">
+        <div id="valueData" class="value">--</div>
+        <div id="unitText" class="unit">หน่วย</div>
+    </div>
 
-        const { useState, useEffect, useMemo } = React;
+    <div style="margin-bottom: 15px;">
+        <span class="label">สถานะ:</span> <span id="connStatus" class="status-online">-</span>
+    </div>
 
-        const firebaseConfig = typeof __firebase_config !== 'undefined' 
-            ? JSON.parse(__firebase_config) 
-            : { apiKey: "AIzaSyBRHvY1JwC9WtXjsiqHjaGIE08IW9UZ28k", authDomain: "badminton-f29a7.firebaseapp.com", projectId: "badminton-f29a7", storageBucket: "badminton-f29a7.firebasestorage.app", messagingSenderId: "880213955717", appId: "1:880213955717:web:ca8ab9ae8a495fae0145ec" };
+    <button onclick="fetchModelaData()">Refresh Data</button>
+    <p id="lastUpdate" class="time">อัปเดตล่าสุด: -</p>
+</div>
+
+<script>
+    // --- เปลี่ยนข้อมูลของคุณที่นี่ ---
+    const CONFIG = {
+        EMAIL: 'your_email', // sila.chayangkoon@gmail.com
+        API_KEY: 'your_api_key' // 4a9adbe87d098246564d238d9709775c1539ff92
+    };
+
+    async function fetchModelaData() {
+        const url = `https://www.modelaaiot.com/api/external/v1/all-data/get_apiservice/${CONFIG.EMAIL}`;
         
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'badminton-app-default';
-        const initialToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        const isConfigValid = !!firebaseConfig.apiKey;
+        try {
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'accept': 'application/json',
+                    'authorization': CONFIG.API_KEY // ตามรูปแบบ curl ของ Modela
+                }
+            });
 
-        const app = isConfigValid ? initializeApp(firebaseConfig) : null;
-        const auth = app ? getAuth(app) : null;
-        const db = app ? getFirestore(app) : null;
+            if (!response.ok) throw new Error('เชื่อมต่อ API ไม่สำเร็จ');
 
-        function App() {
-            const [user, setUser] = useState(null);
-            const [activeTab, setActiveTab] = useState('dashboard');
-            const [loading, setLoading] = useState(true);
+            const data = await response.json();
             
-            // Security State
-            const [showPinModal, setShowPinModal] = useState(false);
-            const [pinValue, setPinValue] = useState('');
-            const [pendingAction, setPendingAction] = useState(null);
-            const CORRECT_PIN = "1234";
+            // ตรวจสอบว่ามีข้อมูลส่งกลับมาหรือไม่
+            if (data && data.length > 0) {
+                const device = data[0];
+                const sensor = device.ValueSensor[0];
 
-            // Data States
-            const [players, setPlayers] = useState([]);
-            const [usageLogs, setUsageLogs] = useState([]);
-            const [stockLogs, setStockLogs] = useState([]);
-            const [courtLogs, setCourtLogs] = useState([]);
-            const [paymentLogs, setPaymentLogs] = useState([]);
+                // อัปเดต UI
+                document.getElementById('boardName').innerText = device.boardName;
+                document.getElementById('connStatus').innerText = device.connectionStatus.toUpperCase();
+                document.getElementById('valueData').innerText = sensor.ValueData;
+                document.getElementById('unitText').innerText = sensor.SensorTypeInfo.unit_thai;
+                
+                const now = new Date();
+                document.getElementById('lastUpdate').innerText = "อัปเดตล่าสุด: " + now.toLocaleTimeString();
+            }
 
-            // Form States
-            const [shuttleCount, setShuttleCount] = useState('');
-            const [selectedPlayers, setSelectedPlayers] = useState([]);
-            const [stockQty, setStockQty] = useState('');
-            const [stockPrice, setStockPrice] = useState('');
-            const [stockBuyer, setStockBuyer] = useState('');
-            const [courtFee, setCourtFee] = useState('');
-            const [courtPayer, setCourtPayer] = useState('');
-            const [newPlayerName, setNewPlayerName] = useState('');
-
-            useEffect(() => {
-                if (!auth) { setLoading(false); return; }
-                const performAuth = async () => {
-                    try {
-                        if (initialToken) await signInWithCustomToken(auth, initialToken);
-                        else await signInAnonymously(auth);
-                    } catch (err) { console.error("Auth error:", err); }
-                };
-                performAuth();
-                const unsubscribe = onAuthStateChanged(auth, (u) => { setUser(u); setLoading(false); });
-                return () => unsubscribe();
-            }, []);
-
-            useEffect(() => {
-                if (!user || !db) return;
-                const getPath = (col) => collection(db, 'artifacts', appId, 'public', 'data', col);
-
-                const unsubUsage = onSnapshot(getPath('usage'), s => setUsageLogs(s.docs.map(d => ({id: d.id, ...d.data()}))), e => console.error(e));
-                const unsubStock = onSnapshot(getPath('stock'), s => setStockLogs(s.docs.map(d => ({id: d.id, ...d.data()}))), e => console.error(e));
-                const unsubCourt = onSnapshot(getPath('court'), s => setCourtLogs(s.docs.map(d => ({id: d.id, ...d.data()}))), e => console.error(e));
-                const unsubPayments = onSnapshot(getPath('payments'), s => setPaymentLogs(s.docs.map(d => ({id: d.id, ...d.data()}))), e => console.error(e));
-                const unsubMembers = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'members'), d => {
-                    if (d.exists()) setPlayers(d.data().list);
-                    else setPlayers(['สมาชิก A', 'สมาชิก B']);
-                }, e => console.error(e));
-
-                return () => { unsubUsage(); unsubStock(); unsubCourt(); unsubPayments(); unsubMembers(); };
-            }, [user]);
-
-            const stats = useMemo(() => {
-                const totalUsed = usageLogs.reduce((s, i) => s + Number(i.shuttleCount || 0), 0);
-                const totalIn = stockLogs.reduce((s, i) => s + Number(i.quantity || 0), 0);
-                const totalCost = stockLogs.reduce((s, i) => s + Number(i.price || 0), 0);
-                const avgPrice = totalIn > 0 ? totalCost / totalIn : 35;
-
-                const balances = {};
-                players.forEach(p => balances[p] = 0);
-
-                // คํานวณค่าลูกแบด
-                usageLogs.forEach(log => {
-                    const costPerPerson = (log.shuttleCount * avgPrice) / (log.players?.length || 1);
-                    log.players?.forEach(p => { if(balances[p] !== undefined) balances[p] += costPerPerson; });
-                });
-
-                // คํานวณค่าสนาม (คนเล่นแชร์กัน, คนจ่ายได้เครดิตคืน)
-                courtLogs.forEach(log => {
-                    const feePerPerson = Number(log.fee) / (log.membersAtTime?.length || 1);
-                    log.membersAtTime?.forEach(p => { if(balances[p] !== undefined) balances[p] += feePerPerson; });
-                    if(balances[log.payer] !== undefined) balances[log.payer] -= Number(log.fee);
-                });
-
-                // คํานวณการซื้อลูกเข้าสต็อก (คนซื้อได้เครดิตคืน)
-                stockLogs.forEach(log => {
-                    if(balances[log.buyer] !== undefined) balances[log.buyer] -= Number(log.price);
-                });
-
-                // หักล้างด้วยยอดที่มีการ "ล้างยอด" (Clear Payment)
-                paymentLogs.forEach(log => {
-                    if(balances[log.playerName] !== undefined) {
-                        balances[log.playerName] -= Number(log.amount);
-                    }
-                });
-
-                return { 
-                    stock: totalIn - totalUsed, 
-                    avgPrice, 
-                    balances: Object.entries(balances).sort((a,b) => b[1] - a[1]) 
-                };
-            }, [players, usageLogs, stockLogs, courtLogs, paymentLogs]);
-
-            // Security Check Wrapper
-            const requestSecurityAction = (actionFn) => {
-                setPendingAction(() => actionFn);
-                setShowPinModal(true);
-            };
-
-            const confirmPin = () => {
-                if (pinValue === CORRECT_PIN) {
-                    if (pendingAction) pendingAction();
-                    closePinModal();
-                } else {
-                    alert("รหัสผ่านไม่ถูกต้อง!");
-                    setPinValue('');
-                }
-            };
-
-            const closePinModal = () => {
-                setShowPinModal(false);
-                setPinValue('');
-                setPendingAction(null);
-            };
-
-            const saveAction = async (col, data) => {
-                try {
-                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', col), {
-                        ...data,
-                        timestamp: Date.now(),
-                        date: new Date().toLocaleDateString('th-TH')
-                    });
-                } catch (err) { alert("เกิดข้อผิดพลาด: " + err.message); }
-            };
-
-            const handleClearBalance = (name, currentAmount) => {
-                if (currentAmount <= 0) {
-                    alert("สมาชิกคนนี้ไม่มียอดค้างชำระ");
-                    return;
-                }
-                requestSecurityAction(() => {
-                    saveAction('payments', {
-                        playerName: name,
-                        amount: currentAmount,
-                        note: 'ล้างยอดทั้งหมด'
-                    });
-                });
-            };
-
-            const handleResetStockAndHistory = () => {
-                const confirmed = confirm("คำเตือน: ระบบจะล้างประวัติการใช้ลูกและสต็อกทั้งหมดเพื่อเริ่มนับราคาเฉลี่ยใหม่ (ยอดค้างชำระปัจจุบันจะยังคงอยู่) ต้องการดำเนินการต่อหรือไม่?");
-                if (!confirmed) return;
-
-                requestSecurityAction(async () => {
-                    try {
-                        const batch = writeBatch(db);
-                        // ลบประวัติการใช้ลูก
-                        const usageSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'usage'));
-                        usageSnap.forEach(d => batch.delete(d.ref));
-                        
-                        // ลบประวัติสต็อกลูก
-                        const stockSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'stock'));
-                        stockSnap.forEach(d => batch.delete(d.ref));
-
-                        await batch.commit();
-                        alert("ล้างประวัติและรีเซ็ตสต็อกสำเร็จแล้ว ราคาเฉลี่ยจะเริ่มนับใหม่จากการเติมลูกครั้งถัดไป");
-                    } catch (err) {
-                        alert("Error resetting: " + err.message);
-                    }
-                });
-            };
-
-            if (loading) return <div className="flex items-center justify-center min-h-screen font-bold">กำลังโหลด...</div>;
-
-            return (
-                <div className="max-w-md mx-auto min-h-screen bg-white shadow-2xl flex flex-col border-x border-slate-100 relative">
-                    
-                    {/* Security Modal */}
-                    {showPinModal && (
-                        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-6">
-                            <div className="bg-white w-full rounded-3xl p-8 shadow-2xl animate-in zoom-in duration-200">
-                                <h3 className="text-center font-black text-slate-800 text-xl mb-2">ยืนยันตัวตน</h3>
-                                <p className="text-center text-slate-400 text-sm mb-6">กรุณาใส่รหัสผ่านเพื่อดำเนินการต่อ</p>
-                                <input 
-                                    type="password" 
-                                    inputMode="numeric"
-                                    placeholder="PIN" 
-                                    className="w-full text-center p-4 rounded-2xl bg-slate-100 font-black text-2xl tracking-[1em] outline-none border-2 border-transparent focus:border-indigo-500 mb-6"
-                                    value={pinValue}
-                                    onChange={e => setPinValue(e.target.value)}
-                                    autoFocus
-                                />
-                                <div className="grid grid-cols-2 gap-3">
-                                    <button onClick={closePinModal} className="py-4 bg-slate-100 text-slate-500 rounded-2xl font-bold">ยกเลิก</button>
-                                    <button onClick={confirmPin} className="py-4 bg-indigo-600 text-white rounded-2xl font-bold">ตกลง</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <header className="bg-gradient-to-br from-indigo-600 to-violet-700 p-6 text-white rounded-b-[2.5rem] shadow-xl">
-                        <div className="flex justify-between items-center">
-                            <h1 className="text-2xl font-black italic tracking-tighter">BADMINTON HUB</h1>
-                            <button onClick={() => setActiveTab('settings')} className="p-2 bg-white/20 rounded-full">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-                            </button>
-                        </div>
-                        <div className="mt-6 flex gap-4">
-                            <div className="flex-1 bg-white/10 p-4 rounded-3xl border border-white/10">
-                                <p className="text-[10px] font-bold uppercase opacity-60">ลูกคงเหลือ</p>
-                                <p className="text-3xl font-black">{stats.stock} <span className="text-xs font-normal">ลูก</span></p>
-                            </div>
-                            <div className="flex-1 bg-white/10 p-4 rounded-3xl border border-white/10">
-                                <p className="text-[10px] font-bold uppercase opacity-60">ราคาเฉลี่ย</p>
-                                <p className="text-3xl font-black">{stats.avgPrice.toFixed(1)} <span className="text-xs font-normal">฿</span></p>
-                            </div>
-                        </div>
-                    </header>
-
-                    <main className="flex-1 p-6 overflow-y-auto no-scrollbar">
-                        {activeTab === 'dashboard' && (
-                            <div className="space-y-6 animate-in fade-in duration-500">
-                                <section>
-                                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">สรุปยอดหนี้/เครดิต</h2>
-                                    <div className="space-y-3">
-                                        {stats.balances.map(([name, balance]) => (
-                                            <div key={name} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                                <div className="flex flex-col">
-                                                    <span className="font-bold text-slate-700">{name}</span>
-                                                    <span className={`text-xs font-black ${balance > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                                        {balance > 0 ? `ค้างจ่าย ${Math.round(balance)}` : `จ่ายเกิน ${Math.abs(Math.round(balance))}`} ฿
-                                                    </span>
-                                                </div>
-                                                {balance > 0 && (
-                                                    <button 
-                                                        onClick={() => handleClearBalance(name, balance)}
-                                                        className="p-3 bg-white text-indigo-600 rounded-xl shadow-sm border border-indigo-100 active:scale-95 transition"
-                                                        title="ล้างยอด"
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </section>
-                            </div>
-                        )}
-
-                        {activeTab === 'add' && (
-                            <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500 pb-10">
-                                {/* ลงการใช้งานลูกแบด */}
-                                <div className="bg-indigo-50 p-6 rounded-[2.5rem] border border-indigo-100">
-                                    <h3 className="font-black text-indigo-700 mb-4 uppercase text-xs tracking-widest">ลงการใช้งานลูกแบด</h3>
-                                    <input type="number" placeholder="จำนวนลูก..." className="w-full p-4 rounded-2xl border-none font-bold text-xl mb-3 shadow-sm" value={shuttleCount} onChange={e=>setShuttleCount(e.target.value)} />
-                                    <div className="grid grid-cols-2 gap-2 mb-4">
-                                        {players.map(p => (
-                                            <button key={p} onClick={() => setSelectedPlayers(prev => prev.includes(p) ? prev.filter(i=>i!==p) : [...prev, p])}
-                                                className={`p-3 rounded-xl font-bold text-xs transition ${selectedPlayers.includes(p) ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100'}`}>
-                                                {p}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <button onClick={()=>{
-                                        saveAction('usage', {shuttleCount: Number(shuttleCount), players: selectedPlayers});
-                                        setShuttleCount('');
-                                        setSelectedPlayers([]);
-                                        setActiveTab('dashboard');
-                                    }} disabled={!shuttleCount || !selectedPlayers.length}
-                                        className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-lg shadow-indigo-100 disabled:opacity-50">บันทึกใช้ลูก</button>
-                                </div>
-
-                                {/* ลงค่าสนาม - ต้องใช้รหัส */}
-                                <div className="bg-emerald-50 p-6 rounded-[2.5rem] border border-emerald-100">
-                                    <h3 className="font-black text-emerald-700 mb-4 uppercase text-xs tracking-widest flex justify-between items-center">
-                                        <span>ลงค่าสนาม</span>
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                                    </h3>
-                                    <input type="number" placeholder="ค่าสนามรวม..." className="w-full p-4 rounded-2xl border-none font-bold text-xl mb-3 shadow-sm" value={courtFee} onChange={e=>setCourtFee(e.target.value)} />
-                                    <select className="w-full p-4 rounded-2xl border-none font-bold text-slate-500 mb-4 shadow-sm outline-none" value={courtPayer} onChange={e=>setCourtPayer(e.target.value)}>
-                                        <option value="">ใครเป็นคนจ่ายเงิน?</option>
-                                        {players.map(p => <option key={p} value={p}>{p}</option>)}
-                                    </select>
-                                    <button onClick={()=>requestSecurityAction(async ()=>{
-                                        await saveAction('court', {fee: Number(courtFee), payer: courtPayer, membersAtTime: players});
-                                        setCourtFee('');
-                                        setCourtPayer('');
-                                        setActiveTab('dashboard');
-                                    })} disabled={!courtFee || !courtPayer}
-                                        className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-lg shadow-emerald-100 disabled:opacity-50">บันทึกค่าสนาม</button>
-                                </div>
-
-                                {/* ซื้อลูกเข้าสต็อก - ต้องใช้รหัส */}
-                                <div className="bg-slate-800 p-6 rounded-[2.5rem] text-white">
-                                    <h3 className="font-black text-slate-400 mb-4 uppercase text-xs tracking-widest flex justify-between items-center">
-                                        <span>ซื้อลูกเข้าคลัง</span>
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                                    </h3>
-                                    <div className="grid grid-cols-2 gap-2 mb-3">
-                                        <input type="number" placeholder="จำนวนลูก" className="p-4 rounded-2xl bg-slate-700 text-white font-bold outline-none" value={stockQty} onChange={e=>setStockQty(e.target.value)} />
-                                        <input type="number" placeholder="ราคา" className="p-4 rounded-2xl bg-slate-700 text-white font-bold outline-none" value={stockPrice} onChange={e=>setStockPrice(e.target.value)} />
-                                    </div>
-                                    <select className="w-full p-4 rounded-2xl bg-slate-700 text-white font-bold mb-4 outline-none" value={stockBuyer} onChange={e=>setStockBuyer(e.target.value)}>
-                                        <option value="">ใครควักเงินซื้อ?</option>
-                                        {players.map(p => <option key={p} value={p}>{p}</option>)}
-                                    </select>
-                                    <button onClick={()=>requestSecurityAction(async ()=>{
-                                        await saveAction('stock', {quantity: Number(stockQty), price: Number(stockPrice), buyer: stockBuyer});
-                                        setStockQty('');
-                                        setStockPrice('');
-                                        setStockBuyer('');
-                                        setActiveTab('dashboard');
-                                    })} disabled={!stockQty || !stockPrice || !stockBuyer}
-                                        className="w-full py-4 bg-slate-600 text-white rounded-2xl font-black shadow-lg disabled:opacity-50">เพิ่มสต็อก</button>
-                                </div>
-                            </div>
-                        )}
-
-                        {activeTab === 'settings' && (
-                            <div className="space-y-6 animate-in fade-in pb-10">
-                                <div className="bg-white p-6 rounded-3xl border border-slate-100">
-                                    <h3 className="font-black text-slate-700 mb-4 uppercase text-xs tracking-widest flex justify-between items-center">
-                                        <span>จัดการสมาชิก</span>
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                                    </h3>
-                                    <div className="flex gap-2 mb-4">
-                                        <input type="text" placeholder="ชื่อเล่น..." className="flex-1 p-4 bg-slate-100 rounded-2xl font-bold outline-none" value={newPlayerName} onChange={e=>setNewPlayerName(e.target.value)} />
-                                        <button onClick={() => requestSecurityAction(async () => {
-                                            const newList = [...players, newPlayerName];
-                                            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'members'), { list: newList });
-                                            setNewPlayerName('');
-                                        })} className="p-4 bg-indigo-600 text-white rounded-2xl font-bold">+</button>
-                                    </div>
-                                    <div className="space-y-2">
-                                        {players.map(p => (
-                                            <div key={p} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
-                                                <span className="font-bold text-slate-600">{p}</span>
-                                                <button onClick={() => requestSecurityAction(async () => {
-                                                    const newList = players.filter(n => n !== p);
-                                                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'members'), { list: newList });
-                                                })} className="text-red-400 font-bold p-2 text-xs">ลบ</button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Reset Section */}
-                                <div className="bg-red-50 p-6 rounded-3xl border border-red-100">
-                                    <h3 className="font-black text-red-700 mb-2 uppercase text-xs tracking-widest flex justify-between items-center">
-                                        <span>สรุปยอดและรีเซ็ตสต็อก</span>
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                                    </h3>
-                                    <p className="text-[10px] text-red-500 mb-4 leading-relaxed font-bold">
-                                        * เมื่อลูกแบดหมดและเติมล็อตใหม่ กดปุ่มนี้เพื่อล้างประวัติการใช้ลูกและราคาทุนเดิม เพื่อให้เริ่มคำนวณราคาเฉลี่ยใหม่จากของที่เติมเข้าไปล่าสุด (ยอดค้างชำระของสมาชิกยังคงอยู่)
-                                    </p>
-                                    <button 
-                                        onClick={handleResetStockAndHistory}
-                                        className="w-full py-4 bg-red-600 text-white rounded-2xl font-black shadow-lg shadow-red-100 flex items-center justify-center gap-2"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                                        รีเซ็ตประวัติลูกแบด
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </main>
-
-                    <nav className="p-6 bg-white border-t border-slate-100 flex justify-around items-center sticky bottom-0">
-                        <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 ${activeTab === 'dashboard' ? 'text-indigo-600' : 'text-slate-300'}`}>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                            <span className="text-[10px] font-black uppercase">Home</span>
-                        </button>
-                        <button onClick={() => setActiveTab('add')} className={`flex flex-col items-center gap-1 ${activeTab === 'add' ? 'text-indigo-600' : 'text-slate-300'}`}>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-                            <span className="text-[10px] font-black uppercase">Add Log</span>
-                        </button>
-                    </nav>
-                </div>
-            );
+        } catch (error) {
+            console.error('Error:', error);
+            alert('ไม่สามารถดึงข้อมูลได้: ' + error.message);
         }
+    }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
+    // เรียกครั้งแรกตอนโหลดหน้า
+    fetchModelaData();
+    
+    // ตั้ง Auto Refresh ทุก 1 นาที
+    setInterval(fetchModelaData, 60000);
+</script>
+
 </body>
 </html>
